@@ -1,0 +1,59 @@
+body{
+    font-family: kalnia;
+    background-color: #FFFDFD;
+}
+.hero{
+    display:flex;
+    justify-content: space-around;
+    align-items: center;
+    margin: 180px auto;
+}
+.home-text{
+    font-size: 32px;
+    text-align: center;
+    width: 45%;
+}
+.home-text h1{
+    font-size: 32px;
+    font-weight: 400;
+}
+.basic-button{
+    font-family: kalnia;
+    font-size: 32px;
+    font-weight: 400;
+    padding: 20px 200px;
+    background-color: #FFFDFD;
+    border: 1px solid #87CEEB;
+    margin: 20px auto;
+    border-radius: 100px;
+}
+
+.signup{
+    gap:10px;
+    display:flex;
+    flex-direction:column;
+    text-align:center;
+
+}
+.signup input{
+    width:200px;
+    height:31px;
+    margin:3px auto;
+    border:1px solid black;
+}
+.signup input:focus{
+    outline:none;
+}
+.signup img{
+    margin:0 auto;
+    margin-top:46px;
+}
+.signup .basic-button{
+    font-size: 16px;
+    width:14%;
+    padding: 14px 20px;
+}
+.signup h1{
+    font-weight: 400;
+     font-size: 32px;
+}
