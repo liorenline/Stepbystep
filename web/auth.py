@@ -2,9 +2,11 @@ import mail
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from web.models import User
 from . import db
-from flask_mail import Mail, Message
-import os
-import dotenv
+from itsdangerous import URLSafeTimedSerializer
+from flask import current_app
+from flask_mail import Message
+from flask_login import current_user
+from flask_login import login_required, current_user
 from flask_login import login_user, logout_user, login_required
 
 auth = Blueprint('auth', __name__)
@@ -58,18 +60,79 @@ def login():
     return "Login page"
 
 
-@auth.route("/")
+@auth.route("/forgot_password", methods=["GET", "POST"])
+def forgot_password():
 
-def index():
-    return render_template("index.html")
+    if request.method == "POST":
+        email = request.form.get("email")
 
-@auth.route("/submit", methods=["POST"])   #is will be changed when i will get front
-def submit():
-    if request.method== "POST":
-        name= request.form["name"]
-        #subject request.form["subject"]
-        message=  request.form["message"]
-        msg = Message("Hello", sender=  os.getenv("EMAIL"), recipients  = [os.getenv('REC_EMAIL')])
-        msg.body = "Hello "+name+",\n\n"+message
-        mail.send(msg)
-    return redirect(url_for("index"))
+        if not email:
+            flash("Please enter your email.", "error")
+            return redirect(url_for("auth.forgot_password"))
+
+        user = User.query.filter_by(email=email).first()
+
+        if user:
+            token = user.generate_reset_token()
+            reset_link = url_for(
+                "auth.reset_password",
+                token=token,
+                _external=True
+            )
+            print("RESET TOKEN:", token)
+
+            msg = Message(
+                "Password Reset Request",
+                recipients=[email]
+            )
+            msg.body = f"Click the link to reset your password:\n{reset_link}"
+            mail.send(msg)
+
+        flash("If this email exists, a reset link was sent.", "success")
+        return redirect(url_for("auth.login"))
+
+    return "forgot_password.html"
+
+@auth.route("/change_password", methods=["GET", "POST"])
+@login_required
+def change_password():
+
+    if request.method == "POST":
+        current_password = request.form.get("current_password")
+        new_password = request.form.get("new_password")
+        confirm_password = request.form.get("confirm_password")
+
+        if not current_user.check_password(current_password):
+            flash("Current password is incorrect.", "error")
+            return redirect(url_for("auth.change_password"))
+
+        if new_password != confirm_password:
+            flash("New passwords do not match.", "error")
+            return change_password
+
+        strong, message = current_user.check_strongpassword(new_password)
+        if not strong:
+            flash(message, "error")
+            return redirect(url_for("auth.change_password"))
+
+        current_user.set_password(new_password)
+        db.session.commit()
+
+        flash("Password changed successfully.", "success")
+        return redirect(url_for("views.home"))
+
+    return change_password.html
+
+
+def generate_reset_token(email):
+    serializer = URLSafeTimedSerializer(auth.config['SECRET_KEY'])
+    return serializer.dumps(email, salt='password-reset-salt')
+
+def verify_reset_token(token, expiration=3600):
+    serializer = URLSafeTimedSerializer(auth.config['SECRET_KEY'])
+    try:
+        email = serializer.loads(token, salt='password-reset-salt', max_age=expiration)
+        return email
+    except Exception as e:
+        return None
+
