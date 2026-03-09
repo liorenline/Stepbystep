@@ -1,13 +1,17 @@
+import app
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager
 from dotenv import load_dotenv
 from flask_mail import Mail
+from config import Config
 import os
 
 load_dotenv()
 db = SQLAlchemy()
+app.config.from_object(Config)
 login_manager = LoginManager()
+
 
 def create_app():
     app = Flask(__name__, template_folder='templates')
@@ -24,12 +28,6 @@ def create_app():
     db.init_app(app)
     login_manager.init_app(app)
     login_manager.login_view = "auth.login"
-
-    from .auth import auth
-    from .views import views
-
-    app.register_blueprint(auth)
-    app.register_blueprint(views)
 
     from .models import User
     @login_manager.user_loader
