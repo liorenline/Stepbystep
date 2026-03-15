@@ -25,18 +25,18 @@ def create_app(config_class=Config):
     mail.init_app(app)
     csrf.init_app(app)
 
-    login_manager.login_view = 'auth.login'
-    login_manager.login_message = 'Log in to cont'
-    login_manager.login_message_category = 'warning'
+    login_manager.login_view = "auth.login"
+    login_manager.login_message = "Please log in to continue."
+    login_manager.login_message_category = "warning"
 
-    from app.routes.auth import auth_bp
-    from app.routes.main import main_bp
+    from app.routes.auth  import auth_bp
+    from app.routes.main  import main_bp
     from app.routes.decks import decks_bp
-    from app.routes.api import api_bp
+    from app.routes.api   import api_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(main_bp)
-    app.register_blueprint(decks_bp)
-    app.register_blueprint(api_bp, url_prefix='/api')
+    app.register_blueprint(decks_bp, url_prefix="/decks")
+    app.register_blueprint(api_bp,   url_prefix="/api")
 
     return app
