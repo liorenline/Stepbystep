@@ -144,6 +144,32 @@ def api_verify_2fa():
         "Logged in successfully."
     )
 
+
+@api_bp.route("/decks", methods=["GET"])
+@login_required
+def api_get_decks():
+    decks = Deck.query.filter_by(user_id=current_user.id).order_by(Deck.updated_at.desc()).all()
+    progress_map = {
+        p.deck_id: p
+        for p in StudyProgress.query.filter_by(user_id=current_user.id).all()
+    }
+
+    result = []
+    for deck in decks:
+        p = progress_map.get(deck.id)
+        result.append({
+            "id": deck.id,
+            "title": deck.title,
+            "description": deck.description,
+            "card_count": deck.card_count(),
+            "cards_studied": p.cards_studied if p else 0,
+            "completion_percent": p.completion_percent() if p else 0,
+            "updated_at": deck.updated_at.isoformat(),
+        })
+
+    return api_ok(result)
+
+
 @api_bp.route("/decks", methods=["POST"])
 @login_required
 @csrf.exempt
@@ -258,3 +284,76 @@ def api_update_card(deck_id, card_id):
     return api_ok({"id": card.id, "question": card.question, "answer": card.answer}, "Card updated.")
 
 
+@api_bp.route("/decks/<int:deck_id>/cards/<int:card_id>", methods=["DELETE"])
+@login_required
+@csrf.exempt
+def api_delete_card(deck_id, card_id):
+    deck = Deck.query.get_or_404(deck_id)
+    if deck.user_id != current_user.id:
+        return api_error("Forbidden.", 403)
+
+    card = Card.query.get_or_404(card_id)
+    if card.deck_id != deck.id:
+        return api_error("Card not found in this deck.", 404)
+
+    db.session.delete(card)
+    db.session.commit()
+    return api_ok(message="Card deleted.")
+
+
+@api_bp.route("/offline/<int:deck_id>", methods=["GET"])
+@login_required
+def api_offline_deck(deck_id):
+    deck = Deck.query.get_or_404(deck_id)
+    if deck.user_id != current_user.id:
+        return api_error("Forbidden.", 403)
+
+    cards = [{"id": c.id, "question": c.question, "answer": c.answer} for c in deck.cards]
+    progress = StudyProgress.query.filter_by(user_id=current_user.id, deck_id=deck_id).first()
+
+    return api_ok({
+        "deck": {
+            "id": deck.id,
+            "title": deck.title,
+            "description": deck.description,
+        },
+        "cards": cards,
+        "progress": {
+            "cards_studied": progress.cards_studied if progress else 0,
+            "cards_correct": progress.cards_correct if progress else 0,
+            "completion_percent": progress.completion_percent() if progress else 0,
+        }
+    })
+
+
+@api_bp.route("/sync-progress", methods=["POST"])
+@login_required
+@csrf.exempt
+def api_sync_progress():
+    body = request.get_json()
+    if not body:
+        return api_error("JSON body required.")
+
+    deck_id = body.get("deck_id")
+    cards_studied = body.get("cards_studied", 0)
+    cards_correct = body.get("cards_correct", 0)
+
+    deck = Deck.query.get(deck_id)
+    if not deck or deck.user_id != current_user.id:
+        return api_error("Deck not found.", 404)
+
+    progress = StudyProgress.query.filter_by(user_id=current_user.id, deck_id=deck_id).first()
+    if not progress:
+        progress = StudyProgress(user_id=current_user.id, deck_id=deck_id)
+        db.session.add(progress)
+
+    progress.cards_studied = cards_studied
+    progress.cards_correct = cards_correct
+    progress.last_studied_at = datetime.utcnow()
+    db.session.commit()
+
+    return api_ok({
+        "deck_id": deck_id,
+        "cards_studied": progress.cards_studied,
+        "completion_percent": progress.completion_percent(),
+    }, "Progress synced.")
