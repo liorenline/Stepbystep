@@ -24,6 +24,45 @@ class LoginForm(FlaskForm):
     password = PasswordField("Password", validators=[DataRequired()])
     submit = SubmitField("Log In")
 
+
+class VerifyCodeForm(FlaskForm):
+    code = StringField("6-digit code", validators=[DataRequired(), Length(min=6, max=6)])
+    submit = SubmitField("Verify")
+
+
+class ResetPasswordRequestForm(FlaskForm):
+    email = StringField("Email", validators=[DataRequired(), Email()])
+    submit = SubmitField("Send Reset Code")
+
+
+class ResetPasswordForm(FlaskForm):
+    code = StringField("Verification Code", validators=[DataRequired(), Length(min=6, max=6)])
+    password = PasswordField("New Password", validators=[DataRequired()])
+    confirm_password = PasswordField(
+        "Confirm Password", validators=[DataRequired(), EqualTo("password", message="Passwords must match.")]
+    )
+    submit = SubmitField("Reset Password")
+
+    def validate_password(self, field):
+        errors = validate_password_strength(field.data)
+        if errors:
+            raise ValidationError(" ".join(errors))
+
+
+class ChangePasswordForm(FlaskForm):
+    code = StringField("Verification Code", validators=[DataRequired(), Length(min=6, max=6)])
+    new_password = PasswordField("New Password", validators=[DataRequired()])
+    confirm_password = PasswordField(
+        "Confirm Password", validators=[DataRequired(), EqualTo("new_password", message="Passwords must match.")]
+    )
+    submit = SubmitField("Change Password")
+
+    def validate_new_password(self, field):
+        errors = validate_password_strength(field.data)
+        if errors:
+            raise ValidationError(" ".join(errors))
+
+
 class ChangeEmailForm(FlaskForm):
     new_email = StringField("New Email", validators=[DataRequired(), Email()])
     submit_request = SubmitField("Send Verification Code")
