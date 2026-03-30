@@ -112,3 +112,24 @@ def logout():
     logout_user()
     flash("You have been logged out.", "info")
     return redirect(url_for("auth.login"))
+
+@auth_bp.route("/profile", methods=["GET", "POST"])
+@login_required
+def profile():
+    change_password_form = ChangePasswordForm()
+    change_email_form = ChangeEmailForm()
+
+    return render_template(
+        "auth/profile.html",
+        change_password_form=change_password_form,
+        change_email_form=change_email_form,
+    )
+
+
+@auth_bp.route("/profile/request-password-change", methods=["POST"])
+@login_required
+def request_password_change():
+    code = EmailCode.create_for_user(current_user, purpose="change_password")
+    send_verification_code(current_user, code.code, purpose="change_password")
+    flash("A verification code has been sent to your email.", "info")
+    return redirect(url_for("auth.profile"))

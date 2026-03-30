@@ -44,7 +44,6 @@ def delete_deck(deck_id):
     return redirect(url_for("main.dashboard"))
 
 
-
 @main_bp.route("/decks/<int:deck_id>/cards/<int:card_id>/delete", methods=["POST"])
 @login_required
 def delete_card(deck_id, card_id):
