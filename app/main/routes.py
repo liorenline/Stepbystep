@@ -29,8 +29,6 @@ def view_deck(deck_id):
     return render_template("main/deck.html", deck=deck, progress=progress)
 
 
-
-
 @main_bp.route("/decks/<int:deck_id>/delete", methods=["POST"])
 @login_required
 def delete_deck(deck_id):
