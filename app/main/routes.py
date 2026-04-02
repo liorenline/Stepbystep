@@ -29,8 +29,6 @@ def view_deck(deck_id):
     return render_template("main/deck.html", deck=deck, progress=progress)
 
 
-
-
 @main_bp.route("/decks/<int:deck_id>/delete", methods=["POST"])
 @login_required
 def delete_deck(deck_id):
@@ -42,7 +40,6 @@ def delete_deck(deck_id):
     db.session.commit()
     flash("Deck deleted.", "info")
     return redirect(url_for("main.dashboard"))
-
 
 
 @main_bp.route("/decks/<int:deck_id>/cards/<int:card_id>/delete", methods=["POST"])
