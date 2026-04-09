@@ -20,7 +20,6 @@ def api_ok(data=None, message=None):
         response["data"] = data
     return jsonify(response), 200
 
-
 @api_bp.route("/register", methods=["POST"])
 @csrf.exempt
 def api_register():
@@ -28,33 +27,17 @@ def api_register():
     if not body:
         return api_error("JSON body required.")
 
-    username = body.get("username", "").strip()
     email = body.get("email", "").strip().lower()
-    password = body.get("password", "")
-    confirm = body.get("confirm_password", "")
-
-    if not username or not email or not password or not confirm:
-        return api_error("All fields are required.")
-
-    if password != confirm:
-        return api_error("Passwords do not match.")
-
-    pw_errors = validate_password_strength(password)
-    if pw_errors:
-        return api_error(" ".join(pw_errors))
 
     if User.query.filter_by(email=email).first():
         return api_error("Email already registered.")
 
-    user = User(username=username, email=email)
-    user.set_password(password)
-    db.session.add(user)
-    db.session.commit()
 
-    code = EmailCode.create_for_user(user, purpose="register")
-    send_verification_code(user, code.code, purpose="register")
+    code = EmailCode.create(email=email, purpose="register")
 
-    return api_ok({"user_id": user.id}, "Account created. Check your email for a verification code.")
+    send_verification_code(email, code.code)
+
+    return api_ok(message="Verification code sent to email.")
 
 
 @api_bp.route("/verify-email", methods=["POST"])
@@ -64,25 +47,40 @@ def api_verify_email():
     if not body:
         return api_error("JSON body required.")
 
-    user_id = body.get("user_id")
+    email = body.get("email", "").strip().lower()
     code_input = body.get("code", "")
+    username = body.get("username", "")
+    password = body.get("password", "")
 
-    user = User.query.get(user_id)
-    if not user:
-        return api_error("User not found.", 404)
+    if not username or not password:
+        return api_error("Username and password required.")
 
     code_record = EmailCode.query.filter_by(
-        user_id=user.id, purpose="register", is_used=False
+        email=email,
+        purpose="register",
+        is_used=False
     ).order_by(EmailCode.created_at.desc()).first()
 
     if not code_record or not code_record.is_valid() or code_record.code != code_input:
         return api_error("Invalid or expired code.")
 
+    if User.query.filter_by(email=email).first():
+        return api_error("User already exists.")
+
+    user = User(
+        username=username,
+        email=email,
+        is_verified=True
+    )
+    user.set_password(password)
+
+    db.session.add(user)
+
     code_record.is_used = True
-    user.is_verified = True
+
     db.session.commit()
 
-    return api_ok(message="Email verified successfully.")
+    return api_ok(message="Account created and verified.")
 
 
 @api_bp.route("/login", methods=["POST"])
