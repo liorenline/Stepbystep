@@ -1,3 +1,4 @@
+import secrets
 from datetime import datetime, timedelta
 from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -55,7 +56,6 @@ class EmailCode(db.Model):
 
     @staticmethod
     def create_for_user(user, purpose, expiry_minutes=15, new_email=None):
-        import secrets
         EmailCode.query.filter_by(user_id=user.id, purpose=purpose, is_used=False).delete()
         code = EmailCode(
             user_id=user.id,
@@ -121,7 +121,7 @@ class StudyProgress(db.Model):
         total = self.deck.card_count()
         if total == 0:
             return 0
-        return round((self.cards_studied / total) * 100)
+        return min(round((self.cards_studied / total) * 100), 100)
 
     def __repr__(self):
         return f"<StudyProgress user={self.user_id} deck={self.deck_id}>"
