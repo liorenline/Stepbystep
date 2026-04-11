@@ -42,7 +42,10 @@ def api_register():
     if errors:
         return api_error(" ".join(errors) if isinstance(errors, list) else errors)
 
-    if User.query.filter_by(email=email).first():
+    existing = User.query.filter_by(email=email).first()
+    if existing:
+        if not existing.is_verified:
+            return api_error("Email registered but not verified. Use resend-verification to get a new code.", 409)
         return api_error("Email already registered.")
 
     try:
@@ -93,6 +96,33 @@ def api_verify_email():
     db.session.commit()
 
     return api_ok(message="Email verified successfully.")
+
+
+@api_bp.route("/resend-verification", methods=["POST"])
+@csrf.exempt
+def api_resend_verification():
+    body = request.get_json()
+    if not body:
+        return api_error("JSON body required.")
+
+    email = body.get("email", "").strip().lower()
+    if not email:
+        return api_error("Email is required.")
+
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return api_error("No account found with this email.", 404)
+
+    if user.is_verified:
+        return api_ok(message="Email is already verified. You can log in.")
+
+    try:
+        code = EmailCode.create_for_user(user, purpose="register")
+        send_verification_code(user, code.code, purpose="register")
+        return api_ok({"user_id": user.id}, "Verification code resent.")
+    except Exception as e:
+        db.session.rollback()
+        return api_error(str(e), 500)
 
 
 @api_bp.route("/login", methods=["POST"])
