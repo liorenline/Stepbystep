@@ -485,7 +485,6 @@ def api_sync_progress():
     }, "Progress synced.")
 
 
-
 @api_bp.route("/user/<int:user_id>", methods=["GET"])
 @csrf.exempt
 def api_get_user(user_id):
@@ -495,7 +494,7 @@ def api_get_user(user_id):
     return api_ok({
         "username": user.username,
         "email": user.email,
-        "two_factor_enabled": user.two_fa_enabled,  # ← FIX: was missing
+        "two_factor_enabled": user.two_fa_enabled,
     })
 
 
@@ -512,7 +511,6 @@ def api_update_user(user_id):
 
     username = body.get("username", "").strip()
     email = body.get("email", "").strip().lower()
-    password = body.get("password", "").strip()
 
     if username:
         user.username = username
@@ -521,16 +519,73 @@ def api_update_user(user_id):
         if existing and existing.id != user.id:
             return api_error("Email already in use.")
         user.email = email
-    if password:
-        errors = validate_password_strength(password)
-        if errors:
-            return api_error(" ".join(errors))
-        user.set_password(password)
 
     db.session.commit()
     return api_ok({"username": user.username, "email": user.email}, "Profile updated.")
 
 
+# ─────────────────────────────────────────────
+#  Password change with email verification
+# ─────────────────────────────────────────────
+
+@api_bp.route("/user/<int:user_id>/send-change-password-code", methods=["POST"])
+@csrf.exempt
+def api_send_change_password_code(user_id):
+    """Send a 6-digit code to the user's email to confirm a password change."""
+    user = User.query.get(user_id)
+    if not user:
+        return api_error("User not found.", 404)
+
+    try:
+        code = EmailCode.create_for_user(user, purpose="change_password")
+        send_verification_code(user, code.code, purpose="change_password")
+        return api_ok(message="Verification code sent to your email.")
+    except Exception as e:
+        db.session.rollback()
+        return api_error(str(e), 500)
+
+
+@api_bp.route("/user/<int:user_id>/change-password", methods=["POST"])
+@csrf.exempt
+def api_change_password(user_id):
+    """Verify the code and apply the new password."""
+    user = User.query.get(user_id)
+    if not user:
+        return api_error("User not found.", 404)
+
+    body = request.get_json()
+    if not body:
+        return api_error("JSON body required.")
+
+    code_input = body.get("code", "").strip()
+    new_password = body.get("password", "").strip()
+
+    if not code_input:
+        return api_error("code is required.")
+    if not new_password:
+        return api_error("password is required.")
+
+    code_record = EmailCode.query.filter_by(
+        user_id=user.id, purpose="change_password", is_used=False
+    ).order_by(EmailCode.created_at.desc()).first()
+
+    if not code_record or not code_record.is_valid() or code_record.code != code_input:
+        return api_error("Invalid or expired code.")
+
+    errors = validate_password_strength(new_password)
+    if errors:
+        return api_error(" ".join(errors) if isinstance(errors, list) else errors)
+
+    code_record.is_used = True
+    user.set_password(new_password)
+    db.session.commit()
+
+    return api_ok(message="Password changed successfully.")
+
+
+# ─────────────────────────────────────────────
+#  2FA setup (enable)
+# ─────────────────────────────────────────────
 
 @api_bp.route("/user/<int:user_id>/2fa/send-code", methods=["POST"])
 @csrf.exempt
@@ -583,9 +638,14 @@ def api_2fa_enable(user_id):
     return api_ok(message="Two-factor authentication enabled successfully.")
 
 
-@api_bp.route("/user/<int:user_id>/2fa/disable", methods=["POST"])
+# ─────────────────────────────────────────────
+#  2FA disable with email verification
+# ─────────────────────────────────────────────
+
+@api_bp.route("/user/<int:user_id>/2fa/send-disable-code", methods=["POST"])
 @csrf.exempt
-def api_2fa_disable(user_id):
+def api_2fa_send_disable_code(user_id):
+    """Send a 6-digit code to confirm disabling 2FA."""
     user = User.query.get(user_id)
     if not user:
         return api_error("User not found.", 404)
@@ -593,6 +653,42 @@ def api_2fa_disable(user_id):
     if not user.two_fa_enabled:
         return api_error("2FA is not enabled.")
 
+    try:
+        code = EmailCode.create_for_user(user, purpose="2fa_disable")
+        send_verification_code(user, code.code, purpose="2fa_disable")
+        return api_ok(message="Verification code sent to your email.")
+    except Exception as e:
+        db.session.rollback()
+        return api_error(str(e), 500)
+
+
+@api_bp.route("/user/<int:user_id>/2fa/disable", methods=["POST"])
+@csrf.exempt
+def api_2fa_disable(user_id):
+    """Verify the code and disable 2FA."""
+    user = User.query.get(user_id)
+    if not user:
+        return api_error("User not found.", 404)
+
+    if not user.two_fa_enabled:
+        return api_error("2FA is not enabled.")
+
+    body = request.get_json()
+    if not body:
+        return api_error("JSON body required.")
+
+    code_input = body.get("code", "").strip()
+    if not code_input:
+        return api_error("code is required.")
+
+    code_record = EmailCode.query.filter_by(
+        user_id=user.id, purpose="2fa_disable", is_used=False
+    ).order_by(EmailCode.created_at.desc()).first()
+
+    if not code_record or not code_record.is_valid() or code_record.code != code_input:
+        return api_error("Invalid or expired code.")
+
+    code_record.is_used = True
     user.two_fa_enabled = False
     db.session.commit()
 
