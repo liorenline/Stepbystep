@@ -1,17 +1,31 @@
 import logging
+import threading
+from flask import current_app
 from flask_mail import Message
 from app.extensions import mail
 
 logger = logging.getLogger(__name__)
 
 
+def _send_email_async(app, msg):
+    with app.app_context():
+        try:
+            mail.send(msg)
+        except Exception as e:
+            logger.error(f"Async email send failed: {e}")
+
+
 def send_email(to, subject, body):
+    from flask import current_app
     msg = Message(
         subject=subject,
         recipients=[to],
         body=body,
     )
-    mail.send(msg)
+    app = current_app._get_current_object()
+    thread = threading.Thread(target=_send_email_async, args=(app, msg))
+    thread.daemon = True
+    thread.start()
 
 
 def send_verification_code(user, code, purpose):
@@ -29,15 +43,11 @@ def send_verification_code(user, code, purpose):
         "change_password": f"Your password change confirmation code: {code}\n\nIt expires in 15 minutes.",
         "change_email": f"Your email change confirmation code: {code}\n\nIt expires in 15 minutes.",
     }
-    try:
-        send_email(
-            to=user.email,
-            subject=subjects.get(purpose, "Step by Step — Verification code"),
-            body=messages.get(purpose, f"Your code: {code}"),
-        )
-    except Exception as e:
-        logger.error(f"Failed to send {purpose} email to {user.email}: {e}")
-        raise RuntimeError(f"Failed to send verification email. Please check your email address or try again later.")
+    send_email(
+        to=user.email,
+        subject=subjects.get(purpose, "Step by Step — Verification code"),
+        body=messages.get(purpose, f"Your code: {code}"),
+    )
 
 
 def validate_password_strength(password):
