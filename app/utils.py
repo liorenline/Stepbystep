@@ -1,31 +1,35 @@
+import os
 import logging
-import threading
-from flask import current_app
-from flask_mail import Message
-from app.extensions import mail
+import requests
 
 logger = logging.getLogger(__name__)
 
-
-def _send_email_async(app, msg):
-    with app.app_context():
-        try:
-            mail.send(msg)
-        except Exception as e:
-            logger.error(f"Async email send failed: {e}")
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
+MAIL_DEFAULT_SENDER = os.environ.get("MAIL_DEFAULT_SENDER", "onboarding@resend.dev")
 
 
 def send_email(to, subject, body):
-    from flask import current_app
-    msg = Message(
-        subject=subject,
-        recipients=[to],
-        body=body,
+    if not RESEND_API_KEY:
+        raise RuntimeError("RESEND_API_KEY is not set.")
+
+    response = requests.post(
+        "https://api.resend.com/emails",
+        headers={
+            "Authorization": f"Bearer {RESEND_API_KEY}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "from": MAIL_DEFAULT_SENDER,
+            "to": [to],
+            "subject": subject,
+            "text": body,
+        },
+        timeout=10,
     )
-    app = current_app._get_current_object()
-    thread = threading.Thread(target=_send_email_async, args=(app, msg))
-    thread.daemon = True
-    thread.start()
+
+    if response.status_code not in (200, 201):
+        logger.error(f"Resend API error: {response.status_code} {response.text}")
+        raise RuntimeError(f"Failed to send email: {response.text}")
 
 
 def send_verification_code(user, code, purpose):
