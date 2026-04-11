@@ -1,37 +1,13 @@
 import os
 import logging
-import requests
+from flask_mail import Message
+from app.extensions import mail
 
 logger = logging.getLogger(__name__)
 
-RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
-MAIL_DEFAULT_SENDER = os.environ.get("MAIL_DEFAULT_SENDER", "onboarding@resend.dev")
-
-
 def send_email(to, subject, body):
-    api_key = os.environ.get("RESEND_API_KEY")
-    if not api_key:
-        raise RuntimeError("RESEND_API_KEY is not set.")
-
-    response = requests.post(
-        "https://api.resend.com/emails",
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        json={
-            "from": MAIL_DEFAULT_SENDER,
-            "to": [to],
-            "subject": subject,
-            "text": body,
-        },
-        timeout=10,
-    )
-
-    if response.status_code not in (200, 201):
-        logger.error(f"Resend API error: {response.status_code} {response.text}")
-        raise RuntimeError(f"Failed to send email: {response.text}")
-
+    msg = Message(subject=subject, recipients=[to], body=body)
+    mail.send(msg)
 
 def send_verification_code(user, code, purpose):
     subjects = {
@@ -53,7 +29,6 @@ def send_verification_code(user, code, purpose):
         subject=subjects.get(purpose, "Step by Step — Verification code"),
         body=messages.get(purpose, f"Your code: {code}"),
     )
-
 
 def validate_password_strength(password):
     errors = []
