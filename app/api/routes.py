@@ -637,11 +637,6 @@ def api_2fa_enable(user_id):
 
     return api_ok(message="Two-factor authentication enabled successfully.")
 
-
-# ─────────────────────────────────────────────
-#  2FA disable with email verification
-# ─────────────────────────────────────────────
-
 @api_bp.route("/user/<int:user_id>/2fa/send-disable-code", methods=["POST"])
 @csrf.exempt
 def api_2fa_send_disable_code(user_id):
@@ -693,3 +688,28 @@ def api_2fa_disable(user_id):
     db.session.commit()
 
     return api_ok(message="Two-factor authentication disabled.")
+
+
+@api_bp.route("/user/<int:user_id>", methods=["DELETE"])
+@csrf.exempt
+def api_delete_user(user_id):
+    user = User.query.get(user_id)
+    if not user:
+        return api_error("User not found.", 404)
+
+    try:
+        EmailCode.query.filter_by(user_id=user.id).delete()
+
+        for deck in Deck.query.filter_by(user_id=user.id).all():
+            Card.query.filter_by(deck_id=deck.id).delete()
+            StudyProgress.query.filter_by(deck_id=deck.id).delete()
+            db.session.delete(deck)
+
+        StudyProgress.query.filter_by(user_id=user.id).delete()
+
+        db.session.delete(user)
+        db.session.commit()
+        return api_ok(message="Account deleted successfully.")
+    except Exception as e:
+        db.session.rollback()
+        return api_error(str(e), 500)
