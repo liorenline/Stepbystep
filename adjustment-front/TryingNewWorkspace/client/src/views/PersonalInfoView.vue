@@ -1,25 +1,197 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
+const authStore = useAuthStore()
 
 const user = ref({
-  firstName: 'John',
-  lastName: 'Doe',
-  email: 'johndoe@mail.com',
-  password: '••••••••'
+  firstName: '',
+  email: '',
 })
 
-const goBack = () => {
-  router.push('/cabinet')
+const loading = ref(true)
+const error = ref('')
+
+// Modal state
+const modal = ref({ type: null }) // 'name' | 'email' | 'password'
+const modalData = ref({})
+const modalError = ref('')
+const modalLoading = ref(false)
+const modalSuccess = ref('')
+
+const BASE_URL = import.meta.env.VITE_API_URL || ''
+
+async function apiFetch(path, options = {}) {
+  const res = await fetch(`${BASE_URL}/api${path}`, {
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    ...options,
+  })
+  return res.json()
+}
+
+onMounted(async () => {
+  try {
+    const userId = authStore.user?.id
+    if (!userId) {
+      router.push('/login')
+      return
+    }
+    const data = await apiFetch(`/user/${userId}`)
+    if (data.success) {
+      user.value.firstName = data.data.username
+      user.value.email = data.data.email
+    } else {
+      error.value = data.error || 'Failed to load user data.'
+    }
+  } catch (e) {
+    error.value = 'Network error.'
+  } finally {
+    loading.value = false
+  }
+})
+
+function openModal(type) {
+  modal.value = { type }
+  modalError.value = ''
+  modalSuccess.value = ''
+  if (type === 'name') {
+    modalData.value = { username: user.value.firstName }
+  } else if (type === 'email') {
+    modalData.value = { new_email: '', code: '', step: 'request' }
+  } else if (type === 'password') {
+    modalData.value = { code: '', password: '', confirm: '', step: 'request' }
+  }
+}
+
+function closeModal() {
+  modal.value = { type: null }
+  modalError.value = ''
+  modalSuccess.value = ''
+  modalData.value = {}
+  modalLoading.value = false
+}
+
+async function saveName() {
+  modalLoading.value = true
+  modalError.value = ''
+  try {
+    const data = await apiFetch(`/user/${authStore.user?.id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ username: modalData.value.username }),
+    })
+    if (data.success) {
+      user.value.firstName = data.data.username
+      if (authStore.user) authStore.user.username = data.data.username
+      modalSuccess.value = 'Name updated!'
+      setTimeout(closeModal, 1000)
+    } else {
+      modalError.value = data.error
+    }
+  } catch {
+    modalError.value = 'Network error.'
+  } finally {
+    modalLoading.value = false
+  }
+}
+
+async function requestEmailCode() {
+  modalLoading.value = true
+  modalError.value = ''
+  try {
+    const data = await apiFetch(`/user/${authStore.user?.id}/email/request-change`, {
+      method: 'POST',
+      body: JSON.stringify({ new_email: modalData.value.new_email }),
+    })
+    if (data.success) {
+      modalData.value.step = 'verify'
+      modalSuccess.value = 'Code sent to new email.'
+    } else {
+      modalError.value = data.error
+    }
+  } catch {
+    modalError.value = 'Network error.'
+  } finally {
+    modalLoading.value = false
+  }
+}
+
+async function confirmEmail() {
+  modalLoading.value = true
+  modalError.value = ''
+  try {
+    const data = await apiFetch(`/user/${authStore.user?.id}/email/confirm-change`, {
+      method: 'POST',
+      body: JSON.stringify({ code: modalData.value.code, new_email: modalData.value.new_email }),
+    })
+    if (data.success) {
+      user.value.email = data.data.email
+      modalSuccess.value = 'Email updated!'
+      setTimeout(closeModal, 1000)
+    } else {
+      modalError.value = data.error
+    }
+  } catch {
+    modalError.value = 'Network error.'
+  } finally {
+    modalLoading.value = false
+  }
+}
+
+async function requestPasswordCode() {
+  modalLoading.value = true
+  modalError.value = ''
+  try {
+    const data = await apiFetch(`/user/${authStore.user?.id}/send-change-password-code`, {
+      method: 'POST',
+    })
+    if (data.success) {
+      modalData.value.step = 'verify'
+      modalSuccess.value = 'Code sent to your email.'
+    } else {
+      modalError.value = data.error
+    }
+  } catch {
+    modalError.value = 'Network error.'
+  } finally {
+    modalLoading.value = false
+  }
+}
+
+async function confirmPassword() {
+  modalError.value = ''
+  if (modalData.value.password !== modalData.value.confirm) {
+    modalError.value = 'Passwords do not match.'
+    return
+  }
+  modalLoading.value = true
+  try {
+    const data = await apiFetch(`/user/${authStore.user?.id}/change-password`, {
+      method: 'POST',
+      body: JSON.stringify({ code: modalData.value.code, password: modalData.value.password }),
+    })
+    if (data.success) {
+      modalSuccess.value = 'Password changed!'
+      setTimeout(closeModal, 1000)
+    } else {
+      modalError.value = data.error
+    }
+  } catch {
+    modalError.value = 'Network error.'
+  } finally {
+    modalLoading.value = false
+  }
 }
 
 const handleDeleteAccount = () => {
   const confirmText = prompt('Delete your account? All your decks, cards and progress will be permanently deleted. Type DELETE to confirm')
   if (confirmText === 'DELETE') {
-    alert('Account deleted.')
-    router.push('/')
+    apiFetch(`/user/${authStore.user?.id}`, { method: 'DELETE' }).then(() => {
+      authStore.logout()
+      router.push('/')
+    })
   }
 }
 </script>
@@ -44,37 +216,32 @@ const handleDeleteAccount = () => {
     <main class="content-box">
       <h1 class="page-title">Personal Information</h1>
 
-      <div class="info-form">
-        
+      <div v-if="loading" class="loading-text">Loading...</div>
+      <div v-else-if="error" class="error-text">{{ error }}</div>
+
+      <div v-else class="info-form">
+
         <div class="field-group">
           <label>First Name</label>
           <div class="input-row">
-            <input type="text" v-model="user.firstName" class="input-base" readonly />
-            <button class="edit-link">Edit</button>
-          </div>
-        </div>
-
-        <div class="field-group">
-          <label>Last Name</label>
-          <div class="input-row">
-            <input type="text" v-model="user.lastName" class="input-base" readonly />
-            <button class="edit-link">Edit</button>
+            <input type="text" :value="user.firstName" class="input-base" readonly />
+            <button class="edit-link" @click="openModal('name')">Edit</button>
           </div>
         </div>
 
         <div class="field-group">
           <label>Email</label>
           <div class="input-row">
-            <input type="email" v-model="user.email" class="input-base" readonly />
-            <button class="edit-link">Edit email</button>
+            <input type="email" :value="user.email" class="input-base" readonly />
+            <button class="edit-link" @click="openModal('email')">Edit email</button>
           </div>
         </div>
 
         <div class="field-group">
           <label>Password</label>
           <div class="input-row">
-            <input type="password" v-model="user.password" class="input-base" readonly />
-            <button class="edit-link">Edit password</button>
+            <input type="password" value="••••••••" class="input-base" readonly />
+            <button class="edit-link" @click="openModal('password')">Edit password</button>
           </div>
         </div>
 
@@ -83,11 +250,91 @@ const handleDeleteAccount = () => {
       <div class="danger-zone">
         <button @click="handleDeleteAccount" class="btn btn-outline delete-btn">Delete account</button>
       </div>
-
     </main>
+
+    <!-- Modal overlay -->
+    <div v-if="modal.type" class="modal-overlay" @click.self="closeModal">
+      <div class="modal-box">
+        <button class="modal-close" @click="closeModal">✕</button>
+
+        <!-- Edit Name -->
+        <template v-if="modal.type === 'name'">
+          <h2 class="modal-title">Edit Name</h2>
+          <div class="modal-field">
+            <label>First Name</label>
+            <input v-model="modalData.username" class="input-base" type="text" placeholder="Your name" />
+          </div>
+          <p v-if="modalError" class="modal-error">{{ modalError }}</p>
+          <p v-if="modalSuccess" class="modal-success">{{ modalSuccess }}</p>
+          <button class="btn btn-primary modal-btn" @click="saveName" :disabled="modalLoading">
+            {{ modalLoading ? 'Saving...' : 'Save' }}
+          </button>
+        </template>
+
+        <!-- Edit Email -->
+        <template v-if="modal.type === 'email'">
+          <h2 class="modal-title">Edit Email</h2>
+          <template v-if="modalData.step === 'request'">
+            <div class="modal-field">
+              <label>New Email</label>
+              <input v-model="modalData.new_email" class="input-base" type="email" placeholder="new@email.com" />
+            </div>
+            <p v-if="modalError" class="modal-error">{{ modalError }}</p>
+            <p v-if="modalSuccess" class="modal-success">{{ modalSuccess }}</p>
+            <button class="btn btn-primary modal-btn" @click="requestEmailCode" :disabled="modalLoading">
+              {{ modalLoading ? 'Sending...' : 'Send verification code' }}
+            </button>
+          </template>
+          <template v-else>
+            <p class="modal-hint">Enter the code sent to <strong>{{ modalData.new_email }}</strong></p>
+            <div class="modal-field">
+              <label>Verification Code</label>
+              <input v-model="modalData.code" class="input-base" type="text" placeholder="123456" />
+            </div>
+            <p v-if="modalError" class="modal-error">{{ modalError }}</p>
+            <p v-if="modalSuccess" class="modal-success">{{ modalSuccess }}</p>
+            <button class="btn btn-primary modal-btn" @click="confirmEmail" :disabled="modalLoading">
+              {{ modalLoading ? 'Verifying...' : 'Confirm' }}
+            </button>
+          </template>
+        </template>
+
+        <!-- Edit Password -->
+        <template v-if="modal.type === 'password'">
+          <h2 class="modal-title">Edit Password</h2>
+          <template v-if="modalData.step === 'request'">
+            <p class="modal-hint">We'll send a verification code to your email.</p>
+            <p v-if="modalError" class="modal-error">{{ modalError }}</p>
+            <p v-if="modalSuccess" class="modal-success">{{ modalSuccess }}</p>
+            <button class="btn btn-primary modal-btn" @click="requestPasswordCode" :disabled="modalLoading">
+              {{ modalLoading ? 'Sending...' : 'Send code' }}
+            </button>
+          </template>
+          <template v-else>
+            <div class="modal-field">
+              <label>Verification Code</label>
+              <input v-model="modalData.code" class="input-base" type="text" placeholder="123456" />
+            </div>
+            <div class="modal-field">
+              <label>New Password</label>
+              <input v-model="modalData.password" class="input-base" type="password" placeholder="New password" />
+            </div>
+            <div class="modal-field">
+              <label>Confirm Password</label>
+              <input v-model="modalData.confirm" class="input-base" type="password" placeholder="Repeat password" />
+            </div>
+            <p v-if="modalError" class="modal-error">{{ modalError }}</p>
+            <p v-if="modalSuccess" class="modal-success">{{ modalSuccess }}</p>
+            <button class="btn btn-primary modal-btn" @click="confirmPassword" :disabled="modalLoading">
+              {{ modalLoading ? 'Saving...' : 'Change password' }}
+            </button>
+          </template>
+        </template>
+
+      </div>
+    </div>
   </div>
 </template>
-
 
 <style scoped>
 .page-container {
@@ -160,6 +407,13 @@ const handleDeleteAccount = () => {
   text-align: center;
 }
 
+.loading-text, .error-text {
+  text-align: center;
+  color: var(--color-text);
+  margin-bottom: 2rem;
+}
+.error-text { color: var(--color-error); }
+
 .info-form {
   display: flex;
   flex-direction: column;
@@ -201,10 +455,7 @@ const handleDeleteAccount = () => {
   cursor: pointer;
   white-space: nowrap;
 }
-
-.edit-link:hover {
-  text-decoration: underline;
-}
+.edit-link:hover { text-decoration: underline; }
 
 .danger-zone {
   display: flex;
@@ -219,8 +470,83 @@ const handleDeleteAccount = () => {
   border-color: var(--color-error);
   color: var(--color-error);
 }
+.delete-btn:hover { background-color: rgba(255, 0, 0, 0.05); }
 
-.delete-btn:hover {
-  background-color: rgba(255, 0, 0, 0.05);
+/* Modal */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal-box {
+  background: #fff;
+  border-radius: 16px;
+  padding: 2rem;
+  width: 100%;
+  max-width: 420px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.modal-close {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  background: none;
+  border: none;
+  font-size: 1rem;
+  cursor: pointer;
+  color: #888;
+}
+.modal-close:hover { color: #333; }
+
+.modal-title {
+  font-family: var(--font-main), 'Playfair Display', serif;
+  font-size: 1.4rem;
+  color: var(--color-text);
+  margin: 0;
+}
+
+.modal-hint {
+  font-size: 0.9rem;
+  color: #666;
+  margin: 0;
+}
+
+.modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  text-align: left;
+}
+
+.modal-field label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.modal-error {
+  color: var(--color-error);
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.modal-success {
+  color: green;
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.modal-btn {
+  width: 100%;
+  margin-top: 0.5rem;
 }
 </style>
