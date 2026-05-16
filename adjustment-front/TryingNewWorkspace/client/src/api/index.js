@@ -1,95 +1,65 @@
 import api from './axios'
 
 // ── AUTH ─────────────────────────────────────────────────────────────
-// All endpoints match app/api/routes.py in the Flask backend
-
 export const authApi = {
-  /**
-   * POST /api/register
-   * Body: { username, email, password }
-   * Returns: { message, user_id } — then need to verify email
-   */
   register: (data) => api.post('/register', data),
-
-  /**
-   * POST /api/verify-email
-   * Body: { user_id, code }
-   * Called after register to verify email with the code sent to inbox
-   */
   verifyEmail: (userId, code) => api.post('/verify-email', { user_id: userId, code }),
-
-  /**
-   * POST /api/login
-   * Body: { email, password }
-   * Sets session cookie via Flask-Login
-   */
   login: (data) => api.post('/login', data),
-
-  /**
-   * POST /api/verify-2fa
-   * Body: { code }
-   * Only needed if user has 2FA enabled
-   */
-  verify2fa: (code) => api.post('/verify-2fa', { code }),
-
-  /**
-   * POST /api/logout
-   * Clears the session cookie
-   */
+  verify2fa: (userId, code) => api.post('/verify-2fa', { user_id: userId, code }),
   logout: () => api.post('/logout'),
+  resendVerification: (email) => api.post('/resend-verification', { email }),
 }
 
 // ── DECKS ─────────────────────────────────────────────────────────────
-
 export const decksApi = {
-  /** GET /api/decks — list all decks for current user */
   getAll: () => api.get('/decks'),
-
-  /** GET /api/decks/:id */
   getOne: (id) => api.get(`/decks/${id}`),
-
-  /**
-   * POST /api/decks
-   * Body: { title, description }
-   * Note: the server uses "title" not "name"
-   */
   create: (data) => api.post('/decks', data),
-
-  /**
-   * PUT /api/decks/:id
-   * Body: { title, description }
-   */
   update: (id, data) => api.put(`/decks/${id}`, data),
-
-  /** DELETE /api/decks/:id */
   remove: (id) => api.delete(`/decks/${id}`),
 }
 
 // ── CARDS ─────────────────────────────────────────────────────────────
-
 export const cardsApi = {
-  /** GET /api/decks/:deckId/cards */
   getAll: (deckId) => api.get(`/decks/${deckId}/cards`),
-
-  /**
-   * POST /api/decks/:deckId/cards
-   * Body: { question, answer }
-   * Note: our UI uses isCorrect (true/false) for Yes/No cards.
-   * Map isCorrect → answer: isCorrect ? 'Correct' : 'Wrong' before sending
-   */
   create: (deckId, data) => api.post(`/decks/${deckId}/cards`, data),
-
-  /**
-   * PUT /api/cards/:id
-   * Body: { question, answer }
-   */
-  update: (id, data) => api.put(`/cards/${id}`, data),
-
-  /** DELETE /api/cards/:id */
-  remove: (id) => api.delete(`/cards/${id}`),
+  update: (deckId, cardId, data) => api.put(`/decks/${deckId}/cards/${cardId}`, data),
+  remove: (deckId, cardId) => api.delete(`/decks/${deckId}/cards/${cardId}`),
 }
 
+// ── USER ─────────────────────────────────────────────────────────────
 export const userApi = {
-  /** GET /api/me — get current logged-in user info */
+  /** GET /api/me */
   getMe: () => api.get('/me'),
+
+  /** PUT /api/user/:id — оновити нікнейм (без підтвердження) */
+  updateUsername: (userId, username) =>
+    api.put(`/user/${userId}`, { username }),
+
+  // ── EMAIL CHANGE (з підтвердженням кодом на нову пошту) ──
+  /** POST /api/user/:id/email/request-change — надіслати код на нову пошту */
+  requestEmailChange: (userId, newEmail) =>
+    api.post(`/user/${userId}/email/request-change`, { new_email: newEmail }),
+
+  /** POST /api/user/:id/email/confirm-change — підтвердити код і змінити пошту */
+  confirmEmailChange: (userId, newEmail, code) =>
+    api.post(`/user/${userId}/email/confirm-change`, { new_email: newEmail, code }),
+
+  // ── PASSWORD CHANGE (з підтвердженням кодом на поточну пошту) ──
+  /** POST /api/user/:id/send-change-password-code — надіслати код на поточну пошту */
+  sendPasswordCode: (userId) =>
+    api.post(`/user/${userId}/send-change-password-code`),
+
+  /** POST /api/user/:id/change-password — підтвердити код і змінити пароль */
+  changePassword: (userId, code, newPassword) =>
+    api.post(`/user/${userId}/change-password`, { code, password: newPassword }),
+
+  // ── 2FA ──
+  send2faCode: (userId) => api.post(`/user/${userId}/2fa/send-code`),
+  enable2fa: (userId, code) => api.post(`/user/${userId}/2fa/enable`, { code }),
+  sendDisable2faCode: (userId) => api.post(`/user/${userId}/2fa/send-disable-code`),
+  disable2fa: (userId, code) => api.post(`/user/${userId}/2fa/disable`, { code }),
+
+  // ── DELETE ──
+  deleteAccount: (userId) => api.delete(`/user/${userId}`),
 }
