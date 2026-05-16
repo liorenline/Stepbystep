@@ -13,6 +13,12 @@ def create_app(config_class=Config):
     migrate.init_app(app, db)
     csrf.init_app(app)
 
+    from flask import session
+
+    @app.before_request
+    def make_session_permanent():
+        session.permanent = True
+
     from app.auth import auth_bp
     from app.main import main_bp
     from app.api import api_bp

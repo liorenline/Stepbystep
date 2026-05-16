@@ -27,3 +27,6 @@ class Config:
     REMEMBER_COOKIE_DURATION = timedelta(days=7)
     REMEMBER_COOKIE_HTTPONLY = True
     REMEMBER_COOKIE_SECURE = os.environ.get("FLASK_ENV") != "development"
+
+    PERMANENT_SESSION_LIFETIME = timedelta(days=7)
+    SESSION_COOKIE_SAMESITE = "Lax"

@@ -151,7 +151,7 @@ def api_login():
         send_verification_code(user, code.code, purpose="2fa")
         return api_ok({"requires_2fa": True, "user_id": user.id}, "2FA code sent to email.")
 
-    login_user(user)
+    login_user(user, remember=True)
     return api_ok(
         {"user_id": user.id, "username": user.username, "email": user.email},
         "Logged in successfully."
@@ -190,7 +190,7 @@ def api_verify_2fa():
 
     code_record.is_used = True
     db.session.commit()
-    login_user(user)
+    login_user(user, remember=True)
 
     return api_ok(
         {"user_id": user.id, "username": user.username, "email": user.email},
