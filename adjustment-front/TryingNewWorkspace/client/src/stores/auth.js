@@ -13,6 +13,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   const isAuthenticated = computed(() => !!user.value)
   const username = computed(() => user.value?.username ?? '')
+  const is2faEnabled = computed(() => !!user.value?.two_fa_enabled)
 
   async function fetchMe() {
     if (sessionChecked.value) return
@@ -84,7 +85,7 @@ export const useAuthStore = defineStore('auth', () => {
     loading.value = true
     error.value = null
     try {
-      const { data } = await authApi.verify2fa(pendingUserId.value, code) // ← виправлено
+      const { data } = await authApi.verify2fa(pendingUserId.value, code)
       user.value = data.data ?? data.user ?? data
       needs2fa.value = false
       pendingUserId.value = null
@@ -109,7 +110,7 @@ export const useAuthStore = defineStore('auth', () => {
   return {
     user, loading, error,
     pendingUserId, needsEmailVerification, needs2fa,
-    isAuthenticated, username, sessionChecked,
+    isAuthenticated, username, sessionChecked, is2faEnabled,
     fetchMe, login, register, verifyEmail, verify2fa, logout
   }
 })
