@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { userApi } from '@/api'
 import { useAuthStore } from '@/stores/auth'
@@ -9,13 +9,61 @@ const authStore = useAuthStore()
 
 const isLoginFlow = !!authStore.pendingUserId
 const isDisableFlow = authStore.is2faEnabled && !authStore.pendingUserId
-
 const step = ref(isLoginFlow ? 'verify' : 'setup')
 
 const contact = ref('')
 const errorMsg = ref('')
 const isLoading = ref(false)
 const code = ref(['', '', '', '', '', ''])
+
+// Таймер resend
+const resendTimer = ref(30)
+const canResend = ref(false)
+let timerInterval = null
+
+const startTimer = () => {
+  resendTimer.value = 30
+  canResend.value = false
+  timerInterval = setInterval(() => {
+    resendTimer.value--
+    if (resendTimer.value <= 0) {
+      clearInterval(timerInterval)
+      canResend.value = true
+    }
+  }, 1000)
+}
+
+onMounted(() => {
+  if (isLoginFlow) startTimer()
+})
+
+onUnmounted(() => {
+  if (timerInterval) clearInterval(timerInterval)
+})
+
+const handleResend = async () => {
+  if (!canResend.value) return
+  isLoading.value = true
+  errorMsg.value = ''
+  try {
+    const userId = authStore.user?.id ?? authStore.pendingUserId
+    if (isLoginFlow) {
+      // При логіні код вже відправлений бекендом — просто рестартуємо таймер
+      // або можна зробити окремий endpoint для resend
+      startTimer()
+    } else if (isDisableFlow) {
+      await userApi.sendDisable2faCode(userId)
+      startTimer()
+    } else {
+      await userApi.send2faCode(userId)
+      startTimer()
+    }
+  } catch (e) {
+    errorMsg.value = e.response?.data?.error ?? 'Failed to resend code'
+  } finally {
+    isLoading.value = false
+  }
+}
 
 const goBack = () => {
   if (step.value === 'verify') {
@@ -47,6 +95,7 @@ const handleSendLetter = async () => {
       await userApi.send2faCode(userId)
     }
     step.value = 'verify'
+    startTimer()
   } catch (e) {
     errorMsg.value = e.response?.data?.error ?? 'Failed to send code'
   } finally {
@@ -155,13 +204,31 @@ const handleVerify = async () => {
 
         <span v-if="errorMsg" class="error-msg">{{ errorMsg }}</span>
 
-        <span class="resend-link">Resend code in 30s</span>
+        <!-- Resend -->
+        <span
+          class="resend-link"
+          :class="{ 'resend-active': canResend }"
+          @click="handleResend"
+        >
+          {{ canResend ? 'Resend code' : `Resend code in ${resendTimer}s` }}
+        </span>
 
-        <button @click="handleVerify" class="btn btn-primary action-btn verify-btn" :disabled="isLoading">
+        <button
+          @click="handleVerify"
+          class="btn btn-primary action-btn verify-btn"
+          :disabled="isLoading"
+        >
           {{ isLoading ? 'Verifying...' : 'Verify' }}
         </button>
 
-        <span v-if="!isLoginFlow" @click="step = 'setup'" class="alt-method-link">Use another method</span>
+        <!-- "Use another method" тільки для setup/disable, не для логіну -->
+        <span
+          v-if="!isLoginFlow"
+          @click="step = 'setup'"
+          class="alt-method-link"
+        >
+          Use another method
+        </span>
       </div>
     </main>
   </div>
@@ -280,7 +347,18 @@ const handleVerify = async () => {
 .digit-box:focus {
   border-color: var(--color-primary);
 }
-.resend-link, .alt-method-link {
+.resend-link {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.85rem;
+  color: var(--color-text-light);
+  margin-bottom: 0.5rem;
+}
+.resend-active {
+  color: var(--color-primary);
+  cursor: pointer;
+  text-decoration: underline;
+}
+.alt-method-link {
   font-family: 'Inter', sans-serif;
   font-size: 0.85rem;
   color: var(--color-text-light);
